@@ -3,14 +3,52 @@ import { StyleSheet, Text, View, TextInput, Button, Alert, ActivityIndicator, Im
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
-import Timer from './timer'; // Import the Timer component
+import Timer from './timer';
 import { IMAGES } from './assets/images';
+import * as TaskManager from 'expo-task-manager';
+import * as BackgroundFetch from 'expo-background-fetch';
+import { Audio } from 'expo-av';
 
 const Stack = createStackNavigator();
+const BACKGROUND_FETCH_TASK = 'background-fetch';
+
+TaskManager.defineTask(BACKGROUND_FETCH_TASK, async () => {
+  try {
+    const isRunning = await AsyncStorage.getItem('isRunning');
+    const time = parseInt(await AsyncStorage.getItem('time'), 10);
+
+    if (isRunning === 'true' && time > 0) {
+      const newTime = time - 1;
+      await AsyncStorage.setItem('time', newTime.toString());
+
+      if (newTime === 0) {
+        // Play alarm
+        const { sound } = await Audio.Sound.createAsync(
+          require('./assets/alarm.mp3') // Replace with the path to your alarm sound file
+        );
+        await sound.playAsync();
+        await AsyncStorage.setItem('isRunning', 'false');
+      }
+    }
+
+    return BackgroundFetch.Result.NewData;
+  } catch (error) {
+    console.log('Error in background task:', error);
+    return BackgroundFetch.Result.Failed;
+  }
+});
+
+async function registerBackgroundFetchAsync() {
+  return BackgroundFetch.registerTaskAsync(BACKGROUND_FETCH_TASK, {
+    minimumInterval: 60, // fetch interval in seconds
+    stopOnTerminate: false, // android only
+    startOnBoot: true, // android only
+  });
+}
 
 function LoginScreen({ navigation }) {
   const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');z
+  const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
   const handleLogin = async () => {
@@ -35,7 +73,7 @@ function LoginScreen({ navigation }) {
         source={IMAGES.LOGO} // Replace with your image URL
         style={styles.logo}
       />
-      <Text style={styles.title}>Login</Text>
+      <Text style={styles.title}>Dinesh Homes</Text>
       <TextInput
         style={styles.input}
         placeholder="Username"
@@ -53,6 +91,15 @@ function LoginScreen({ navigation }) {
       {isLoading && <ActivityIndicator size="large" color="#0000ff" />}
     </View>
   );
+}
+
+function TimerScreen({ navigation }) {
+  const handleLogout = async () => {
+    await AsyncStorage.removeItem('isLoggedIn');
+    navigation.replace('Login'); // Navigate to Login screen
+  };
+
+  return <Timer onLogout={handleLogout} />;
 }
 
 export default function App() {
@@ -75,6 +122,7 @@ export default function App() {
     };
 
     checkLoginStatus();
+    registerBackgroundFetchAsync(); // Register the background fetch task
   }, []);
 
   if (isLoading) {
@@ -88,8 +136,16 @@ export default function App() {
   return (
     <NavigationContainer>
       <Stack.Navigator initialRouteName={isLoggedIn ? "Timer" : "Login"}>
-        <Stack.Screen name="Login" component={LoginScreen} />
-        <Stack.Screen name="Timer" component={Timer} />
+        <Stack.Screen
+          name="Login"
+          component={LoginScreen}
+          options={{ headerShown: false }} // Remove the header
+        />
+        <Stack.Screen
+          name="Timer"
+          component={TimerScreen}
+          options={{ headerShown: false }} // Remove the header
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );

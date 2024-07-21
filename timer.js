@@ -1,15 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, Image, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import { StyleSheet, Text, View, Image, TouchableOpacity, Alert } from 'react-native';
 import { Audio } from 'expo-av';
 import { db } from './firebaseConfig';
 import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-export default function Timer() {
+export default function Timer({ onLogout }) {
   const [time, setTime] = useState(25 * 60); // 25 minutes in seconds
   const [isRunning, setIsRunning] = useState(false);
   const [sound, setSound] = useState(null);
   const [isAlarmPlaying, setIsAlarmPlaying] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const timerRef = doc(db, 'timers', 'globalTimer');
@@ -19,9 +19,6 @@ export default function Timer() {
         const data = doc.data();
         setTime(data.time);
         setIsRunning(data.isRunning);
-        setIsLoading(false);
-      } else {
-        setIsLoading(false);
       }
     });
 
@@ -31,16 +28,18 @@ export default function Timer() {
   useEffect(() => {
     let timer;
     if (isRunning && time > 0) {
-      timer = setInterval(() => {
-        setTime((prevTime) => {
+      timer = setInterval(async () => {
+        setTime(async (prevTime) => {
           const newTime = prevTime - 1;
-          setDoc(doc(db, 'timers', 'globalTimer'), { time: newTime, isRunning: true });
+          await setDoc(doc(db, 'timers', 'globalTimer'), { time: newTime, isRunning: true });
+          await AsyncStorage.setItem('time', newTime.toString());
           return newTime;
         });
       }, 1000);
     } else if (time === 0) {
       playAlarm();
       setIsRunning(false);
+      AsyncStorage.setItem('isRunning', 'false');
     }
     return () => clearInterval(timer);
   }, [isRunning, time]);
@@ -52,7 +51,7 @@ export default function Timer() {
         }
       : undefined;
   }, [sound]);
-  
+
   const playAlarm = async () => {
     const { sound } = await Audio.Sound.createAsync(
       require('./assets/alarm.mp3') // Replace with the path to your alarm sound file
@@ -70,15 +69,18 @@ export default function Timer() {
     }
   };
 
-  const startTimer = () => {
+  const startTimer = async () => {
     setIsRunning(true);
-    setDoc(doc(db, 'timers', 'globalTimer'), { time, isRunning: true });
+    await AsyncStorage.setItem('isRunning', 'true');
+    await setDoc(doc(db, 'timers', 'globalTimer'), { time, isRunning: true });
   };
 
-  const setTimer = (minutes) => {
+  const setTimer = async (minutes) => {
     const newTime = minutes * 60;
     setTime(newTime);
-    setDoc(doc(db, 'timers', 'globalTimer'), { time: newTime, isRunning: false });
+    await AsyncStorage.setItem('time', newTime.toString());
+    await AsyncStorage.setItem('isRunning', 'false');
+    await setDoc(doc(db, 'timers', 'globalTimer'), { time: newTime, isRunning: false });
     setIsRunning(false);
   };
 
@@ -89,14 +91,6 @@ export default function Timer() {
   };
 
   const totalDuration = 25 * 60; // Total duration for the timer (25 minutes)
-
-  if (isLoading) {
-    return (
-      <View style={styles.container}>
-        <ActivityIndicator size="large" color="#29B6F6" />
-      </View>
-    );
-  }
 
   return (
     <View style={styles.container}>
@@ -133,6 +127,9 @@ export default function Timer() {
           <Text style={styles.stopButtonText}>Stop Alarm</Text>
         </TouchableOpacity>
       )}
+      <TouchableOpacity style={styles.logoutButton} onPress={onLogout}>
+        <Text style={styles.logoutButtonText}>Logout</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -215,6 +212,17 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   stopButtonText: {
+    color: '#fff',
+    fontSize: 18,
+  },
+  logoutButton: {
+    backgroundColor: '#FF5252',
+    paddingVertical: 10,
+    paddingHorizontal: 40,
+    borderRadius: 5,
+    marginTop: 20,
+  },
+  logoutButtonText: {
     color: '#fff',
     fontSize: 18,
   },
